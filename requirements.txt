@@ -1,2 +1,1 @@
--e .[dev]
 greenlet>=3.0
