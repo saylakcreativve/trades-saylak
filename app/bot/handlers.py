@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import io
 import logging
-from pathlib import Path
 
 import matplotlib.pyplot as plt
 import mplfinance as mpf
@@ -35,7 +34,21 @@ def symbol_arg(update: Update) -> str | None:
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text("""PROFESSIONAL QUANT INVESTMENT INTELLIGENCE PLATFORM\n\n/start\n/analiz NVDA\n/grafik NVDA\n/firsatlar\n/piyasa\n/haberler NVDA\n/olaylar\n/riski\n/backtest NVDA\n/status\n/help\n\nSistem karar desteği sağlar; garanti getiri veya kesin tahmin üretmez.""")
+    await update.message.reply_text("""PROFESSIONAL QUANT INVESTMENT INTELLIGENCE PLATFORM
+
+/start
+/analiz NVDA
+/grafik NVDA
+/firsatlar
+/piyasa
+/haberler NVDA
+/olaylar
+/riski
+/backtest NVDA
+/status
+/help
+
+Sistem karar desteği sağlar; garanti getiri veya kesin tahmin üretmez.""")
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -52,34 +65,88 @@ async def analiz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         raw = await provider.history(symbol, period="1y", interval="1d")
         df = normalize_ohlcv(raw)
         validate_ohlcv(df)
+
         tech = technical_snapshot(df)
         info = await provider.fundamentals(symbol)
         fundamental = fundamental_snapshot(info)
         snapshot = (await provider.snapshot(symbol)).__dict__
+
         feeds = config.get("news", {}).get("feeds", [])
         news = await fetch_news(feeds, limit=10)
+
         weights = config.get("score_weights", {})
-        components = {
-            "technical": technical_score(tech),
-            "fundamental": fundamental_score(fundamental),
-            "momentum": technical_score(tech),
-            "sentiment": 50.0,
-            "macro": 50.0,
-            "geopolitical": 50.0,
-            "risk": risk_score(tech),
+        technical = technical_score(tech)
+        fundamental_component = fundamental_score(fundamental)
+        risk_component = risk_score(tech)
+
+        # These feeds are not yet converted into quantitative scores.
+        # Keep them unavailable instead of pretending that 50 means "neutral".
+        components: dict[str, float | None] = {
+            "technical": technical,
+            "fundamental": fundamental_component,
+            "momentum": technical,
+            "sentiment": None,
+            "macro": None,
+            "geopolitical": None,
+            "risk": risk_component,
         }
+
         score = final_score(components, weights)
-        decision, confidence = ensemble_decision(score, components["technical"], components["fundamental"], components["risk"])
+        decision, confidence = ensemble_decision(
+            score, technical, fundamental_component, risk_component
+        )
+
         entry = tech["price"]
-        stop = atr_stop(entry, tech["atr"] or entry * 0.02, float(config.get("risk", {}).get("atr_multiplier", 2.0)))
-        target = rr_target(entry, stop, 2.0)
-        sizing = position_size(100_000, entry, stop, settings.risk_per_trade, settings.max_position_pct)
-        risk = {"entry": entry, "stop": stop, "target": target, "quantity": sizing["quantity"]}
-        text = analysis_text(symbol, snapshot, tech, fundamental, components, score, decision, confidence, news, risk)
+        direction = "SHORT" if decision == "CONDITIONAL BEARISH" else "LONG"
+        atr = tech.get("atr")
+        if atr is None or atr <= 0:
+            raise ValueError("ATR unavailable; risk levels cannot be calculated safely")
+
+        risk_cfg = config.get("risk", {})
+        atr_multiplier = float(risk_cfg.get("atr_multiplier", 2.0))
+        rr_ratio = 2.0
+        stop = atr_stop(entry, atr, atr_multiplier, direction)
+        target = rr_target(entry, stop, rr_ratio, direction)
+
+        risk_per_trade = float(risk_cfg.get("risk_per_trade", settings.risk_per_trade))
+        max_position_pct = float(
+            risk_cfg.get("max_position_pct", settings.max_position_pct)
+        )
+        sizing = position_size(
+            100_000,
+            entry,
+            stop,
+            risk_per_trade,
+            max_position_pct,
+        )
+        risk = {
+            "entry": entry,
+            "stop": stop,
+            "target": target,
+            "quantity": sizing["quantity"],
+            "risk_amount": sizing["risk_amount"],
+            "notional": sizing["notional"],
+            "direction": direction,
+        }
+
+        text = analysis_text(
+            symbol,
+            snapshot,
+            tech,
+            fundamental,
+            components,
+            score,
+            decision,
+            confidence,
+            news,
+            risk,
+        )
         await update.message.reply_text(text, reply_markup=analysis_keyboard(symbol))
     except Exception as exc:
         logger.exception("analysis failed for %s", symbol)
-        await update.message.reply_text(f"DATA UNAVAILABLE / ANALYSIS FAILED\n\n{type(exc).__name__}: {exc}")
+        await update.message.reply_text(
+            f"DATA UNAVAILABLE / ANALYSIS FAILED\n\n{type(exc).__name__}: {exc}"
+        )
 
 
 async def grafik(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -95,8 +162,21 @@ async def grafik(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         x["EMA20"] = x["Close"].ewm(span=20, adjust=False).mean()
         x["EMA50"] = x["Close"].ewm(span=50, adjust=False).mean()
         x["EMA200"] = x["Close"].ewm(span=200, adjust=False).mean()
-        ap = [mpf.make_addplot(x["EMA20"]), mpf.make_addplot(x["EMA50"]), mpf.make_addplot(x["EMA200"])]
-        fig, _ = mpf.plot(x, type="candle", volume=True, addplot=ap, style="yahoo", title=f"{symbol} | Daily | Decision Support", returnfig=True, figsize=(12, 8))
+        ap = [
+            mpf.make_addplot(x["EMA20"]),
+            mpf.make_addplot(x["EMA50"]),
+            mpf.make_addplot(x["EMA200"]),
+        ]
+        fig, _ = mpf.plot(
+            x,
+            type="candle",
+            volume=True,
+            addplot=ap,
+            style="yahoo",
+            title=f"{symbol} | Daily | Decision Support",
+            returnfig=True,
+            figsize=(12, 8),
+        )
         buf = io.BytesIO()
         fig.savefig(buf, format="png", dpi=140, bbox_inches="tight")
         plt.close(fig)
@@ -123,13 +203,20 @@ async def firsatlar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not rows:
         await update.message.reply_text("DATA UNAVAILABLE")
         return
-    body = "\n".join(f"{i}. {s} | Score {sc:.1f} | {tr} | RSI {rsi:.1f}" for i, (sc, s, tr, rsi) in enumerate(rows[:10], 1))
+    body = "\n".join(
+        f"{i}. {s} | Score {sc:.1f} | {tr} | RSI {rsi:.1f}"
+        for i, (sc, s, tr, rsi) in enumerate(rows[:10], 1)
+    )
     await update.message.reply_text("TOP CANDIDATES\n\n" + body + "\n\nScore ≠ probability. Liste karar desteğidir.")
 
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     token = "OK" if settings.telegram_bot_token else "MISSING"
-    await update.message.reply_text(f"SYSTEM STATUS\n\nTelegram: {token}\nDatabase: configured\nMarket Data: Yahoo provider configured\nNews: RSS configured\nML: research module available\nLive trading: DISABLED")
+    await update.message.reply_text(
+        f"SYSTEM STATUS\n\nTelegram: {token}\nDatabase: configured\n"
+        "Market Data: Yahoo provider configured\nNews: RSS configured\n"
+        "ML: research module available\nLive trading: DISABLED"
+    )
 
 
 async def unknown(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
