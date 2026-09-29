@@ -6,6 +6,66 @@ def pct(v: float | None) -> str:
     return "N/A" if v is None else f"{v:+.2f}%"
 
 
-def analysis_text(symbol: str, snapshot: dict, tech: dict, fundamental: dict, components: dict, score: float, decision: str, confidence: str, news: list[dict], risk: dict) -> str:
-    news_lines = "\n".join(f"• {n['title'][:120]}" for n in news[:5]) or "• Haber verisi bulunamadı."
-    return f"""🟢 {symbol.upper()}\n\nPrice: {money(snapshot['price'])}\nDaily Change: {pct(snapshot.get('change_pct'))}\nMarket Data: {snapshot.get('freshness')}\nSource: {snapshot.get('source')}\n\n📊 TECHNICAL\nTrend: {tech['trend']}\nRSI: {money(tech['rsi'])}\nMACD: {tech['macd']}\nEMA20/50/200: {money(tech['ema20'])} / {money(tech['ema50'])} / {money(tech['ema200'])}\nSupport: {money(tech['support'])}\nResistance: {money(tech['resistance'])}\n\n🏢 FUNDAMENTAL\nRevenue Growth: {pct((fundamental.get('revenue_growth') or 0)*100) if fundamental.get('revenue_growth') is not None else 'N/A'}\nEarnings Growth: {pct((fundamental.get('earnings_growth') or 0)*100) if fundamental.get('earnings_growth') is not None else 'N/A'}\nForward P/E: {money(fundamental.get('forward_pe'))}\n\n📰 NEWS\n{news_lines}\n\n🧮 MODEL SCORE\nTechnical: {components['technical']:.1f}\nFundamental: {components['fundamental']:.1f}\nRisk: {components['risk']:.1f}\nFinal Score: {score:.1f}/100\n\nDecision: {decision}\nConfidence: {confidence}\n\n🛡 RISK\nEntry reference: {money(risk.get('entry'))}\nStop: {money(risk.get('stop'))}\nTarget (2R): {money(risk.get('target'))}\nPosition size @ configured risk: {money(risk.get('quantity'))}\n\nWHY\n• Score is a model assessment, not a probability.\n• Current trend/momentum and fundamentals are combined with risk controls.\n• Missing or stale data blocks aggressive signal generation.\n\n⚠️ This is decision support, not guaranteed return or a promise of future performance."""
+def analysis_text(
+    symbol: str,
+    snapshot: dict,
+    tech: dict,
+    fundamental: dict,
+    components: dict,
+    score: float,
+    decision: str,
+    confidence: str,
+    news: list[dict],
+    risk: dict,
+) -> str:
+    news_lines = "\n".join(
+        f"• {n['title'][:120]}" for n in news[:5]
+    ) or "• Haber verisi bulunamadı."
+
+    icon = "🔴" if "BEARISH" in decision else "🟢" if "BULLISH" in decision else "🟡"
+    direction = risk.get("direction", "LONG")
+
+    return f"""{icon} {symbol.upper()}
+
+Fiyat: {money(snapshot['price'])}
+Günlük Değişim: {pct(snapshot.get('change_pct'))}
+Piyasa Verisi: {snapshot.get('freshness')}
+Kaynak: {snapshot.get('source')}
+
+📊 TEKNİK
+Trend: {tech['trend']}
+RSI: {money(tech['rsi'])}
+MACD: {tech['macd']}
+EMA20/50/200: {money(tech['ema20'])} / {money(tech['ema50'])} / {money(tech['ema200'])}
+Destek: {money(tech['support'])}
+Direnç: {money(tech['resistance'])}
+
+🏢 TEMEL
+Gelir Büyümesi: {pct((fundamental.get('revenue_growth') or 0)*100) if fundamental.get('revenue_growth') is not None else 'N/A'}
+Kâr Büyümesi: {pct((fundamental.get('earnings_growth') or 0)*100) if fundamental.get('earnings_growth') is not None else 'N/A'}
+Forward P/E: {money(fundamental.get('forward_pe'))}
+
+📰 HABERLER
+{news_lines}
+
+🧮 MODEL SKORU
+Teknik: {components['technical']:.1f}
+Temel: {components['fundamental']:.1f}
+Risk: {components['risk']:.1f}
+Final Skor: {score:.1f}/100
+
+Karar: {decision}
+Güven: {confidence}
+
+🛡 RİSK
+Yön: {direction}
+Giriş referansı: {money(risk.get('entry'))}
+Stop: {money(risk.get('stop'))}
+Hedef (2R): {money(risk.get('target'))}
+Pozisyon: {money(risk.get('quantity'))}
+
+ℹ️ Notlar
+• Skor bir model değerlendirmesidir, olasılık değildir.
+• Sentiment, makro ve jeopolitik bileşenler henüz nicel skora dahil edilmemektedir.
+• Eksik veya gecikmiş veri agresif sinyal üretimini engeller.
+• Bu sistem karar desteğidir; garanti getiri veya kesin tahmin sunmaz."""
