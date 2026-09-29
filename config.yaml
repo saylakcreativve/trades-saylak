@@ -1,0 +1,24 @@
+risk:
+  risk_per_trade: 0.005
+  max_position_pct: 0.10
+  max_sector_exposure: 0.30
+  max_portfolio_heat: 0.10
+  stop_method: atr
+  atr_multiplier: 2.0
+score_weights:
+  technical: 0.20
+  fundamental: 0.20
+  momentum: 0.15
+  sentiment: 0.10
+  macro: 0.10
+  geopolitical: 0.10
+  risk: 0.15
+market:
+  default_period: 1y
+  default_interval: 1d
+  cache_ttl_seconds: 60
+news:
+  refresh_minutes: 15
+  feeds:
+    - https://feeds.bbci.co.uk/news/business/rss.xml
+    - https://www.cnbc.com/id/100003114/device/rss/rss.html
